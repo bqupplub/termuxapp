@@ -70,7 +70,6 @@ public final class TerminalRenderer {
             canvas.drawColor(palette[TextStyle.COLOR_INDEX_FOREGROUND], PorterDuff.Mode.SRC);
 
         float heightOffset = mFontLineSpacingAndAscent;
-        int charsToSkipInNextLine = 0;
         for (int row = topRow; row < endRow; row++) {
             heightOffset += mFontLineSpacing;
 
@@ -85,59 +84,23 @@ public final class TerminalRenderer {
             final char[] line = lineObject.mText;
             final int charsUsedInLine = lineObject.getSpaceUsed();
 
-            int charsToSkipThisLine = charsToSkipInNextLine;
-            charsToSkipInNextLine = 0;
-
-            int overflowChars = 0;
-            char[] renderLine = line;
-            int renderCharsUsed = charsUsedInLine;
-            if (lineObject.mLineWrap && row + 1 < mEmulator.mRows) {
-                TerminalRow nextLineObject = screen.allocateFullLineIfNecessary(screen.externalToInternalRow(row + 1));
-                if (nextLineObject.getSpaceUsed() > 0) {
-                    java.text.BreakIterator tempIter = java.text.BreakIterator.getCharacterInstance();
-                    String tempStr = new String(line, 0, charsUsedInLine) + new String(nextLineObject.mText, 0, nextLineObject.getSpaceUsed());
-                    tempIter.setText(tempStr);
-                    int boundary = tempIter.following(charsUsedInLine - 1);
-                    if (boundary > charsUsedInLine && boundary != java.text.BreakIterator.DONE) {
-                        overflowChars = boundary - charsUsedInLine;
-                        renderLine = new char[charsUsedInLine + overflowChars];
-                        System.arraycopy(line, 0, renderLine, 0, charsUsedInLine);
-                        System.arraycopy(nextLineObject.mText, 0, renderLine, charsUsedInLine, overflowChars);
-                        renderCharsUsed += overflowChars;
-                        charsToSkipInNextLine = overflowChars;
-                    }
-                }
-            }
-
             long lastRunStyle = 0;
             boolean lastRunInsideCursor = false;
             boolean lastRunInsideSelection = false;
             int lastRunStartColumn = -1;
-            int lastRunStartIndex = charsToSkipThisLine;
+            int lastRunStartIndex = 0;
             boolean lastRunFontWidthMismatch = false;
-            int currentCharIndex = charsToSkipThisLine;
+            int currentCharIndex = 0;
             float measuredWidthForRun = 0.f;
 
             java.text.BreakIterator graphemeIter = java.text.BreakIterator.getCharacterInstance();
-            String lineString = new String(renderLine, 0, renderCharsUsed);
+            String lineString = new String(line, 0, charsUsedInLine);
             graphemeIter.setText(lineString);
             int clusterStart = graphemeIter.first();
             int clusterEnd = graphemeIter.next();
 
-            while (clusterStart < currentCharIndex && clusterEnd != java.text.BreakIterator.DONE) {
-                clusterStart = clusterEnd;
-                clusterEnd = graphemeIter.next();
-            }
-
-            int skippedColumns = 0;
-            for(int i = 0; i < charsToSkipThisLine; ) {
-                int w = WcWidth.width(renderLine, i);
-                if (w > 0) skippedColumns += w;
-                i += Character.isHighSurrogate(renderLine[i]) ? 2 : 1;
-            }
-
-            for (int column = skippedColumns; column < columns; ) {
-                if (currentCharIndex >= renderCharsUsed) {
+            for (int column = 0; column < columns; ) {
+                if (currentCharIndex >= charsUsedInLine) {
                     break;
                 }
                 
@@ -145,15 +108,15 @@ public final class TerminalRenderer {
                     clusterStart = clusterEnd;
                     clusterEnd = graphemeIter.next();
                 }
-                int currentClusterEnd = clusterEnd != java.text.BreakIterator.DONE ? clusterEnd : renderCharsUsed;
-                if (currentClusterEnd > renderCharsUsed) currentClusterEnd = renderCharsUsed;
+                int currentClusterEnd = clusterEnd != java.text.BreakIterator.DONE ? clusterEnd : charsUsedInLine;
+                if (currentClusterEnd > charsUsedInLine) currentClusterEnd = charsUsedInLine;
 
                 int charsForCluster = currentClusterEnd - currentCharIndex;
                 int clusterWcWidth = 0;
                 for (int i = currentCharIndex; i < currentClusterEnd; ) {
-                    int w = WcWidth.width(renderLine, i);
+                    int w = WcWidth.width(line, i);
                     if (w > 0) clusterWcWidth += w;
-                    i += Character.isHighSurrogate(renderLine[i]) ? 2 : 1;
+                    i += Character.isHighSurrogate(line[i]) ? 2 : 1;
                 }
                 
                 // Fallback for zero-width clusters (e.g. only combining marks)
@@ -165,7 +128,7 @@ public final class TerminalRenderer {
                 final boolean insideSelection = (column + clusterWcWidth - 1) >= selx1 && column <= selx2;
                 final long style = lineObject.getStyle(column);
 
-                final float measuredClusterWidth = mTextPaint.measureText(renderLine, currentCharIndex, charsForCluster);
+                final float measuredClusterWidth = mTextPaint.measureText(line, currentCharIndex, charsForCluster);
                 final boolean fontWidthMismatch = Math.abs(measuredClusterWidth / mFontWidth - clusterWcWidth) > 0.01;
 
                 if (style != lastRunStyle || insideCursor != lastRunInsideCursor || insideSelection != lastRunInsideSelection || (fontWidthMismatch != lastRunFontWidthMismatch)) {
@@ -179,7 +142,7 @@ public final class TerminalRenderer {
                         if (lastRunInsideCursor && cursorShape == TerminalEmulator.TERMINAL_CURSOR_STYLE_BLOCK) {
                             invertCursorTextColor = true;
                         }
-                        drawTextRun(canvas, renderLine, palette, heightOffset, lastRunStartColumn, columnWidthSinceLastRun,
+                        drawTextRun(canvas, line, palette, heightOffset, lastRunStartColumn, columnWidthSinceLastRun,
                             lastRunStartIndex, charsSinceLastRun, measuredWidthForRun,
                             cursorColor, cursorShape, lastRunStyle, reverseVideo || invertCursorTextColor || lastRunInsideSelection);
                     }
@@ -203,7 +166,7 @@ public final class TerminalRenderer {
             if (lastRunInsideCursor && cursorShape == TerminalEmulator.TERMINAL_CURSOR_STYLE_BLOCK) {
                 invertCursorTextColor = true;
             }
-            drawTextRun(canvas, renderLine, palette, heightOffset, lastRunStartColumn, columnWidthSinceLastRun, lastRunStartIndex, charsSinceLastRun,
+            drawTextRun(canvas, line, palette, heightOffset, lastRunStartColumn, columnWidthSinceLastRun, lastRunStartIndex, charsSinceLastRun,
                 measuredWidthForRun, cursorColor, cursorShape, lastRunStyle, reverseVideo || invertCursorTextColor || lastRunInsideSelection);
         }
     }
