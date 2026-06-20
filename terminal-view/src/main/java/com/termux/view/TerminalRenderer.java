@@ -131,7 +131,7 @@ public final class TerminalRenderer {
                 final float measuredClusterWidth = mTextPaint.measureText(line, currentCharIndex, charsForCluster);
                 final boolean fontWidthMismatch = Math.abs(measuredClusterWidth / mFontWidth - clusterWcWidth) > 0.01;
 
-                if (style != lastRunStyle || insideCursor != lastRunInsideCursor || insideSelection != lastRunInsideSelection || fontWidthMismatch || lastRunFontWidthMismatch) {
+                if (style != lastRunStyle || insideCursor != lastRunInsideCursor || insideSelection != lastRunInsideSelection || (fontWidthMismatch != lastRunFontWidthMismatch)) {
                     if (column == 0) {
                         // Skip first column as there is nothing to draw, just record the current style.
                     } else {
