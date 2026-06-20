@@ -93,23 +93,43 @@ public final class TerminalRenderer {
             int currentCharIndex = 0;
             float measuredWidthForRun = 0.f;
 
+            java.text.BreakIterator graphemeIter = java.text.BreakIterator.getCharacterInstance();
+            String lineString = new String(line, 0, charsUsedInLine);
+            graphemeIter.setText(lineString);
+            int clusterStart = graphemeIter.first();
+            int clusterEnd = graphemeIter.next();
+
             for (int column = 0; column < columns; ) {
-                final char charAtIndex = line[currentCharIndex];
-                final boolean charIsHighsurrogate = Character.isHighSurrogate(charAtIndex);
-                final int charsForCodePoint = charIsHighsurrogate ? 2 : 1;
-                final int codePoint = charIsHighsurrogate ? Character.toCodePoint(charAtIndex, line[currentCharIndex + 1]) : charAtIndex;
-                final int codePointWcWidth = WcWidth.width(codePoint);
-                final boolean insideCursor = (cursorX == column || (codePointWcWidth == 2 && cursorX == column + 1));
-                final boolean insideSelection = column >= selx1 && column <= selx2;
+                if (currentCharIndex >= charsUsedInLine) {
+                    break;
+                }
+                
+                if (currentCharIndex >= clusterEnd) {
+                    clusterStart = clusterEnd;
+                    clusterEnd = graphemeIter.next();
+                }
+                int currentClusterEnd = clusterEnd != java.text.BreakIterator.DONE ? clusterEnd : charsUsedInLine;
+                if (currentClusterEnd > charsUsedInLine) currentClusterEnd = charsUsedInLine;
+
+                int charsForCluster = currentClusterEnd - currentCharIndex;
+                int clusterWcWidth = 0;
+                for (int i = currentCharIndex; i < currentClusterEnd; ) {
+                    int w = WcWidth.width(line, i);
+                    if (w > 0) clusterWcWidth += w;
+                    i += Character.isHighSurrogate(line[i]) ? 2 : 1;
+                }
+                
+                // Fallback for zero-width clusters (e.g. only combining marks)
+                if (clusterWcWidth == 0) {
+                    clusterWcWidth = 1;
+                }
+
+                final boolean insideCursor = (cursorX >= column && cursorX < column + clusterWcWidth);
+                final boolean insideSelection = (column + clusterWcWidth - 1) >= selx1 && column <= selx2;
                 final long style = lineObject.getStyle(column);
 
-                // Check if the measured text width for this code point is not the same as that expected by wcwidth().
-                // This could happen for some fonts which are not truly monospace, or for more exotic characters such as
-                // smileys which android font renders as wide.
-                // If this is detected, we draw this code point scaled to match what wcwidth() expects.
-                final float measuredCodePointWidth = (codePoint < asciiMeasures.length) ? asciiMeasures[codePoint] : mTextPaint.measureText(line,
-                    currentCharIndex, charsForCodePoint);
-                final boolean fontWidthMismatch = Math.abs(measuredCodePointWidth / mFontWidth - codePointWcWidth) > 0.01;
+                final float measuredClusterWidth = mTextPaint.measureText(line, currentCharIndex, charsForCluster);
+                final boolean fontWidthMismatch = Math.abs(measuredClusterWidth / mFontWidth - clusterWcWidth) > 0.01;
 
                 if (style != lastRunStyle || insideCursor != lastRunInsideCursor || insideSelection != lastRunInsideSelection || fontWidthMismatch || lastRunFontWidthMismatch) {
                     if (column == 0) {
@@ -134,14 +154,9 @@ public final class TerminalRenderer {
                     lastRunStartIndex = currentCharIndex;
                     lastRunFontWidthMismatch = fontWidthMismatch;
                 }
-                measuredWidthForRun += measuredCodePointWidth;
-                column += codePointWcWidth;
-                currentCharIndex += charsForCodePoint;
-                while (currentCharIndex < charsUsedInLine && WcWidth.width(line, currentCharIndex) <= 0) {
-                    // Eat combining chars so that they are treated as part of the last non-combining code point,
-                    // instead of e.g. being considered inside the cursor in the next run.
-                    currentCharIndex += Character.isHighSurrogate(line[currentCharIndex]) ? 2 : 1;
-                }
+                measuredWidthForRun += measuredClusterWidth;
+                column += clusterWcWidth;
+                currentCharIndex += charsForCluster;
             }
 
             final int columnWidthSinceLastRun = columns - lastRunStartColumn;
@@ -192,11 +207,13 @@ public final class TerminalRenderer {
         mes = mes / mFontWidth;
         boolean savedMatrix = false;
         if (Math.abs(mes - runWidthColumns) > 0.01) {
-            canvas.save();
-            canvas.scale(runWidthColumns / mes, 1.f);
-            left *= mes / runWidthColumns;
-            right *= mes / runWidthColumns;
-            savedMatrix = true;
+            if (mes > runWidthColumns) {
+                canvas.save();
+                canvas.scale(runWidthColumns / mes, 1.f);
+                left *= mes / runWidthColumns;
+                right *= mes / runWidthColumns;
+                savedMatrix = true;
+            }
         }
 
         if (backColor != palette[TextStyle.COLOR_INDEX_BACKGROUND]) {
