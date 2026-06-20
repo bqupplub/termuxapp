@@ -80,6 +80,18 @@ public final class TerminalBuffer {
                 // Selected the start of a wide character.
                 x2Index = lineObject.findStartOfColumn(x2 + 1);
             }
+
+            java.text.BreakIterator graphemeIter = java.text.BreakIterator.getCharacterInstance();
+            String lineString = new String(lineObject.mText, 0, lineObject.getSpaceUsed());
+            graphemeIter.setText(lineString);
+            if (x1Index > 0 && !graphemeIter.isBoundary(x1Index)) {
+                int preceding = graphemeIter.preceding(x1Index);
+                if (preceding != java.text.BreakIterator.DONE) x1Index = preceding;
+            }
+            if (x2Index < lineObject.getSpaceUsed() && !graphemeIter.isBoundary(x2Index)) {
+                int following = graphemeIter.following(x2Index);
+                if (following != java.text.BreakIterator.DONE) x2Index = following;
+            }
             char[] line = lineObject.mText;
             int lastPrintingCharIndex = -1;
             int i;
@@ -298,16 +310,24 @@ public final class TerminalBuffer {
 
                 int currentOldCol = 0;
                 long styleAtCol = 0;
-                for (int i = 0; i < lastNonSpaceIndex; i++) {
-                    // Note that looping over java character, not cells.
-                    char c = oldLine.mText[i];
-                    int codePoint = (Character.isHighSurrogate(c)) ? Character.toCodePoint(c, oldLine.mText[++i]) : c;
-                    int displayWidth = WcWidth.width(codePoint);
-                    // Use the last style if this is a zero-width character:
-                    if (displayWidth > 0) styleAtCol = oldLine.getStyle(currentOldCol);
 
-                    // Line wrap as necessary:
-                    if (currentOutputExternalColumn + displayWidth > mColumns) {
+                java.text.BreakIterator graphemeIter = java.text.BreakIterator.getCharacterInstance();
+                String lineString = new String(oldLine.mText, 0, lastNonSpaceIndex);
+                graphemeIter.setText(lineString);
+                int clusterStart = graphemeIter.first();
+                int clusterEnd = graphemeIter.next();
+
+                while (clusterEnd != java.text.BreakIterator.DONE) {
+                    int clusterWcWidth = 0;
+                    for (int i = clusterStart; i < clusterEnd; i++) {
+                        char c = oldLine.mText[i];
+                        int codePoint = (Character.isHighSurrogate(c)) ? Character.toCodePoint(c, oldLine.mText[++i]) : c;
+                        int displayWidth = WcWidth.width(codePoint);
+                        if (displayWidth > 0) clusterWcWidth += displayWidth;
+                    }
+
+                    // Line wrap as necessary for the whole cluster:
+                    if (currentOutputExternalColumn + clusterWcWidth > mColumns) {
                         setLineWrap(currentOutputExternalRow);
                         if (currentOutputExternalRow == mScreenRows - 1) {
                             if (newCursorPlaced) newCursorRow--;
@@ -318,20 +338,33 @@ public final class TerminalBuffer {
                         currentOutputExternalColumn = 0;
                     }
 
-                    int offsetDueToCombiningChar = ((displayWidth <= 0 && currentOutputExternalColumn > 0) ? 1 : 0);
-                    int outputColumn = currentOutputExternalColumn - offsetDueToCombiningChar;
-                    setChar(outputColumn, currentOutputExternalRow, codePoint, styleAtCol);
+                    for (int i = clusterStart; i < clusterEnd; i++) {
+                        // Note that looping over java character, not cells.
+                        char c = oldLine.mText[i];
+                        int codePoint = (Character.isHighSurrogate(c)) ? Character.toCodePoint(c, oldLine.mText[++i]) : c;
+                        int displayWidth = WcWidth.width(codePoint);
+                        // Use the last style if this is a zero-width character:
+                        if (displayWidth > 0) styleAtCol = oldLine.getStyle(currentOldCol);
 
-                    if (displayWidth > 0) {
-                        if (oldCursorRow == externalOldRow && oldCursorColumn == currentOldCol) {
-                            newCursorColumn = currentOutputExternalColumn;
-                            newCursorRow = currentOutputExternalRow;
-                            newCursorPlaced = true;
+                        int offsetDueToCombiningChar = ((displayWidth <= 0 && currentOutputExternalColumn > 0) ? 1 : 0);
+                        int outputColumn = currentOutputExternalColumn - offsetDueToCombiningChar;
+                        setChar(outputColumn, currentOutputExternalRow, codePoint, styleAtCol);
+
+                        if (displayWidth > 0) {
+                            if (oldCursorRow == externalOldRow && oldCursorColumn == currentOldCol) {
+                                newCursorColumn = currentOutputExternalColumn;
+                                newCursorRow = currentOutputExternalRow;
+                                newCursorPlaced = true;
+                            }
+                            currentOldCol += displayWidth;
+                            currentOutputExternalColumn += displayWidth;
                         }
-                        currentOldCol += displayWidth;
-                        currentOutputExternalColumn += displayWidth;
-                        if (justToCursor && newCursorPlaced) break;
                     }
+
+                    if (justToCursor && newCursorPlaced) break;
+                    
+                    clusterStart = clusterEnd;
+                    clusterEnd = graphemeIter.next();
                 }
                 // Old row has been copied. Check if we need to insert newline if old line was not wrapping:
                 if (externalOldRow != (oldScreenRows - 1) && !oldLine.mLineWrap) {
