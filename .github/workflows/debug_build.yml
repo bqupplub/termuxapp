@@ -135,8 +135,39 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          echo "Generating Release Notes"
+          cat <<'EOF' > release_notes.md
+          ${{ env.RELEASE_VERSION_NAME }} - $(date -u +'%Y-%m-%d %H:%M UTC')
+
+          Commit history: https://github.com/${{ github.repository }}/commits/${{ env.RELEASE_VERSION_NAME }}
+
+          ### Downloads
+
+          #### Android 7+ only
+          * [termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-7-github-debug_universal.apk](https://github.com/${{ github.repository }}/releases/download/${{ env.RELEASE_VERSION_NAME }}/termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-7-github-debug_universal.apk)
+          * [termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-7-github-debug_arm64-v8a.apk](https://github.com/${{ github.repository }}/releases/download/${{ env.RELEASE_VERSION_NAME }}/termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-7-github-debug_arm64-v8a.apk)
+          * [termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-7-github-debug_armeabi-v7a.apk](https://github.com/${{ github.repository }}/releases/download/${{ env.RELEASE_VERSION_NAME }}/termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-7-github-debug_armeabi-v7a.apk)
+          * [termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-7-github-debug_x86_64.apk](https://github.com/${{ github.repository }}/releases/download/${{ env.RELEASE_VERSION_NAME }}/termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-7-github-debug_x86_64.apk)
+          * [termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-7-github-debug_x86.apk](https://github.com/${{ github.repository }}/releases/download/${{ env.RELEASE_VERSION_NAME }}/termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-7-github-debug_x86.apk)
+
+          #### Android 5 and 6 only
+          * [termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-5-github-debug_universal.apk](https://github.com/${{ github.repository }}/releases/download/${{ env.RELEASE_VERSION_NAME }}/termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-5-github-debug_universal.apk)
+          * [termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-5-github-debug_arm64-v8a.apk](https://github.com/${{ github.repository }}/releases/download/${{ env.RELEASE_VERSION_NAME }}/termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-5-github-debug_arm64-v8a.apk)
+          * [termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-5-github-debug_armeabi-v7a.apk](https://github.com/${{ github.repository }}/releases/download/${{ env.RELEASE_VERSION_NAME }}/termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-5-github-debug_armeabi-v7a.apk)
+          * [termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-5-github-debug_x86_64.apk](https://github.com/${{ github.repository }}/releases/download/${{ env.RELEASE_VERSION_NAME }}/termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-5-github-debug_x86_64.apk)
+          * [termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-5-github-debug_x86.apk](https://github.com/${{ github.repository }}/releases/download/${{ env.RELEASE_VERSION_NAME }}/termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-5-github-debug_x86.apk)
+
+          **NOTICE:** Use `apt-android-7` variant for Android `>= 7` and `apt-android-5` variant for Android `5 / 6` and do not mix. Use `universal` variant if device/Android architecture is unknown. Basically, use `termux-app_${{ env.RELEASE_VERSION_NAME }}-apt-android-7-github-debug_universal.apk` variant for Android `>= 7` if in doubt. Check install and GitHub install source docs for more info.
+          EOF
+
+          # Trim leading spaces from release_notes.md so formatting isn't broken inside cat EOF block
+          sed -i -E 's/^[[:space:]]{10}//' release_notes.md
+
           echo "Creating Release if not exists"
-          gh release create "${{ env.RELEASE_VERSION_NAME }}" --prerelease --title "Debug Build ${{ env.RELEASE_VERSION_NAME }}" --notes "Automatic debug build for commit $GITHUB_SHA" || true
+          gh release create "${{ env.RELEASE_VERSION_NAME }}" --prerelease --title "Debug Build ${{ env.RELEASE_VERSION_NAME }}" -F release_notes.md || {
+            echo "Release creation failed or already exists. Checking if it exists..."
+            gh release view "${{ env.RELEASE_VERSION_NAME }}"
+          }
 
           echo "Uploading APKs to GitHub Release"
           gh release upload "${{ env.RELEASE_VERSION_NAME }}" \
