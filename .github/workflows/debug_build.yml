@@ -12,6 +12,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -50,6 +52,7 @@ jobs:
           echo "APK_DIR_PATH=$APK_DIR_PATH" >> $GITHUB_ENV
           echo "APK_VERSION_TAG=$APK_VERSION_TAG" >> $GITHUB_ENV
           echo "APK_BASENAME_PREFIX=$APK_BASENAME_PREFIX" >> $GITHUB_ENV
+          echo "RELEASE_VERSION_NAME=$RELEASE_VERSION_NAME" >> $GITHUB_ENV
 
           echo "Building APKs for 'APK_VERSION_TAG' build"
           export TERMUX_APP_VERSION_NAME="${RELEASE_VERSION_NAME/v/}" # Used by app/build.gradle
@@ -125,3 +128,22 @@ jobs:
           path: |
             ${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_sha256sums
             ${{ env.APK_DIR_PATH }}/output-metadata.json
+
+      - name: Create and upload to GitHub Release
+        if: github.event_name == 'push'
+        shell: bash {0}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Creating Release if not exists"
+          gh release create "${{ env.RELEASE_VERSION_NAME }}" --prerelease --title "Debug Build ${{ env.RELEASE_VERSION_NAME }}" --notes "Automatic debug build for commit $GITHUB_SHA" || true
+
+          echo "Uploading APKs to GitHub Release"
+          gh release upload "${{ env.RELEASE_VERSION_NAME }}" \
+            "${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_universal.apk" \
+            "${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_arm64-v8a.apk" \
+            "${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_armeabi-v7a.apk" \
+            "${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_x86_64.apk" \
+            "${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_x86.apk" \
+            "${{ env.APK_DIR_PATH }}/${{ env.APK_BASENAME_PREFIX }}_sha256sums" \
+            --clobber
