@@ -529,6 +529,13 @@ public final class WcWidth {
         // combining characters with zero width
         if (intable(ZERO_WIDTH, ucs)) return 0;
 
+        switch (Character.getType(ucs)) {
+            case Character.NON_SPACING_MARK:
+            case Character.ENCLOSING_MARK:
+            case Character.COMBINING_SPACING_MARK:
+                return 0;
+        }
+
         return intable(WIDE_EASTASIAN, ucs) ? 2 : 1;
     }
 
