@@ -532,7 +532,6 @@ public final class WcWidth {
         switch (Character.getType(ucs)) {
             case Character.NON_SPACING_MARK:
             case Character.ENCLOSING_MARK:
-            case Character.COMBINING_SPACING_MARK:
                 return 0;
         }
 
